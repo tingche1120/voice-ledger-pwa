@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#fbfaf7" />
+    <meta name="apple-mobile-web-app-title" content="日日記帳" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>日日記帳</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="screen active" id="homeScreen" aria-label="首頁">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="todayLabel">今天</p>
+            <h1>日日記帳</h1>
+          </div>
+          <button class="icon-button" id="syncButton" aria-label="同步狀態" title="同步狀態">
+            <span aria-hidden="true">↻</span>
+          </button>
+        </header>
+
+        <section class="calendar-panel" aria-label="月曆">
+          <div class="calendar-controls">
+            <select id="yearSelect" aria-label="選擇年份"></select>
+            <select id="monthSelect" aria-label="選擇月份"></select>
+            <select id="daySelect" aria-label="選擇日期"></select>
+            <button class="today-button" id="todayButton" type="button">今日</button>
+            <button class="icon-button search-button" id="searchButton" aria-label="搜尋紀錄" title="搜尋紀錄">
+              <span aria-hidden="true">⌕</span>
+            </button>
+          </div>
+          <div class="calendar-weekdays" aria-hidden="true">
+            <span>週</span>
+            <span>日</span>
+            <span>一</span>
+            <span>二</span>
+            <span>三</span>
+            <span>四</span>
+            <span>五</span>
+            <span>六</span>
+          </div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+          <div class="selected-day-summary" id="selectedDaySummary"></div>
+        </section>
+
+        <section class="quick-capture" aria-label="快速記帳">
+          <div class="capture-orb" id="listenState" aria-live="polite">
+            <button class="mic-button" id="micButton" aria-label="按住語音記帳" title="按住語音記帳">
+              <span aria-hidden="true">●</span>
+              <p>按住說話，放開解析</p>
+            </button>
+          </div>
+          <form class="quick-form" id="quickForm">
+            <input id="quickText" autocomplete="off" placeholder="午餐一百 星巴克兩百" />
+            <button type="submit">解析</button>
+          </form>
+          <p class="keyboard-hint" id="keyboardHint" hidden>鍵盤跳出後，請按鍵盤上的麥克風說話</p>
+        </section>
+
+        <section class="summary-grid" aria-label="本月摘要">
+          <article class="summary primary">
+            <span>本月支出</span>
+            <strong id="monthExpense">$0</strong>
+          </article>
+          <article class="summary">
+            <span>本月收入</span>
+            <strong id="monthIncome">$0</strong>
+          </article>
+          <article class="summary">
+            <span>結餘</span>
+            <strong id="monthBalance">$0</strong>
+          </article>
+        </section>
+
+        <section class="recent-section" aria-label="最近紀錄">
+          <div class="section-title">
+            <h2>最近紀錄</h2>
+            <button class="text-button" data-nav="records">全部</button>
+          </div>
+          <div class="record-list" id="recentList"></div>
+        </section>
+      </section>
+
+      <section class="screen" id="recordsScreen" aria-label="紀錄">
+        <header class="topbar compact">
+          <div>
+            <p class="eyebrow">所有紀錄</p>
+            <h1>流水帳</h1>
+          </div>
+          <button class="icon-button" id="clearButton" aria-label="重置示範資料" title="重置示範資料">
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+        <div class="filter-row">
+          <button class="chip active" data-filter="all">全部</button>
+          <button class="chip" data-filter="expense">支出</button>
+          <button class="chip" data-filter="income">收入</button>
+        </div>
+        <div class="record-list full" id="recordList"></div>
+      </section>
+
+      <section class="screen" id="statsScreen" aria-label="統計">
+        <header class="topbar compact">
+          <div>
+            <p class="eyebrow">分類統計</p>
+            <h1>本月分布</h1>
+          </div>
+        </header>
+        <div class="chart-list" id="chartList"></div>
+      </section>
+
+      <section class="screen" id="settingsScreen" aria-label="設定">
+        <header class="topbar compact">
+          <div>
+            <p class="eyebrow">雲端與偏好</p>
+            <h1>設定</h1>
+          </div>
+        </header>
+        <div class="settings-list">
+          <article>
+            <span>雲端同步</span>
+            <strong>本機資料</strong>
+          </article>
+          <article class="settings-backup">
+            <span>備份與還原</span>
+            <div class="settings-actions">
+              <button type="button" id="backupJsonButton">備份 JSON</button>
+              <button type="button" id="restoreJsonButton">還原 JSON</button>
+              <button type="button" id="exportCsvButton">匯出 CSV</button>
+              <input id="restoreFileInput" type="file" accept="application/json,.json" hidden />
+            </div>
+          </article>
+          <article class="settings-categories">
+            <div class="category-summary" id="categorySummary"></div>
+            <button class="settings-edit-button" type="button" id="editCategoriesButton">編輯</button>
+            <div class="category-edit-panel" id="categoryEditPanel" hidden>
+              <form class="category-form" id="categoryForm">
+                <input id="categoryNameInput" autocomplete="off" placeholder="新增分類" />
+                <input id="categoryWordsInput" autocomplete="off" placeholder="關鍵字，用、分隔" />
+                <button type="submit">新增</button>
+              </form>
+              <div class="category-editor" id="categoryEditor"></div>
+              <div class="category-edit-actions">
+                <button type="button" class="secondary" id="cancelCategoriesButton">取消</button>
+                <button type="button" class="primary" id="saveCategoriesButton">儲存</button>
+              </div>
+            </div>
+          </article>
+          <article>
+            <span>語音辨識</span>
+            <strong id="speechSupport">檢查中</strong>
+          </article>
+        </div>
+        <button class="help-button" type="button" id="helpButton">使用說明</button>
+        <p class="app-version">A1.0</p>
+      </section>
+
+      <nav class="bottom-nav" aria-label="主要導覽">
+        <button class="active" data-nav="home">首頁</button>
+        <button data-nav="records">紀錄</button>
+        <button data-nav="stats">統計</button>
+        <button data-nav="settings">設定</button>
+      </nav>
+    </main>
+
+    <div class="sheet-backdrop" id="confirmBackdrop" hidden>
+      <section class="confirm-sheet" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow" id="confirmMode">我聽到</p>
+            <h2 id="confirmTitle">準備記錄</h2>
+          </div>
+          <button class="icon-button sheet-close" id="closeConfirm" aria-label="關閉確認視窗" title="關閉">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <p class="heard" id="heardText"></p>
+        <div class="pending-list" id="pendingList"></div>
+        <div class="sheet-actions">
+          <button class="secondary" id="cancelConfirm">取消</button>
+          <button class="primary" id="saveConfirm">全部儲存</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="sheet-backdrop" id="monthDetailBackdrop" hidden>
+      <section class="confirm-sheet" role="dialog" aria-modal="true" aria-labelledby="monthDetailTitle">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">月份明細</p>
+            <h2 id="monthDetailTitle">本月紀錄</h2>
+          </div>
+          <button class="icon-button sheet-close" id="closeMonthDetail" aria-label="關閉月份明細" title="關閉">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <div class="month-detail-summary" id="monthDetailSummary"></div>
+        <div class="record-list month-detail-list" id="monthDetailList"></div>
+      </section>
+    </div>
+
+    <div class="sheet-backdrop" id="searchBackdrop" hidden>
+      <section class="confirm-sheet search-sheet" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">搜尋紀錄</p>
+            <h2 id="searchTitle">找到所有符合項目</h2>
+          </div>
+          <button class="icon-button sheet-close" id="closeSearch" aria-label="關閉搜尋" title="關閉">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <form class="search-form" id="searchForm">
+          <input id="searchText" autocomplete="off" placeholder="輸入備註或分類" />
+          <button type="submit">搜尋</button>
+        </form>
+        <div class="search-summary" id="searchSummary"></div>
+        <div class="search-results" id="searchResults"></div>
+      </section>
+    </div>
+
+    <div class="sheet-backdrop" id="helpBackdrop" hidden>
+      <section class="confirm-sheet help-sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <div class="sheet-head">
+          <div>
+            <p class="eyebrow">使用說明</p>
+            <h2 id="helpTitle">日日記帳怎麼用</h2>
+          </div>
+          <button class="icon-button sheet-close" id="closeHelp" aria-label="關閉使用說明" title="關閉">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <div class="help-content">
+          <section>
+            <h3>快速記帳</h3>
+            <p>在輸入框打「午餐100」或「午餐一百」，按解析後確認儲存。</p>
+          </section>
+          <section>
+            <h3>一次記多筆</h3>
+            <p>可以輸入「早餐80 午餐120 晚餐200」，會自動拆成多筆。</p>
+          </section>
+          <section>
+            <h3>指定日期</h3>
+            <p>支援「昨天晚餐300」、「4月25午餐500」、「2026/2/10保險3000」。</p>
+          </section>
+          <section>
+            <h3>語音輸入</h3>
+            <p>若瀏覽器不支援網頁語音，按綠色按鈕會開啟鍵盤，再按鍵盤麥克風說話。</p>
+          </section>
+          <section>
+            <h3>搜尋與備份</h3>
+            <p>月曆右上角可搜尋所有紀錄；設定頁可備份 JSON、還原 JSON 或匯出 CSV。</p>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" hidden>已記錄完成</div>
+    <script src="./app.js"></script>
+  </body>
+</html>

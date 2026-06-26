@@ -1,0 +1,8 @@
+.agents/
+.codex/
+*.log
+server.out.log
+server.err.log
+node_modules/
+.DS_Store
+Thumbs.db
