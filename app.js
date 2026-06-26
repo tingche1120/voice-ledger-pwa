@@ -61,6 +61,7 @@ let holdStarted = false;
 let ignoreNextClick = false;
 let categoryDraftCategories = [];
 let categoryDraftHints = [];
+let calendarSwipeStart = null;
 
 const els = {
   todayLabel: document.querySelector("#todayLabel"),
@@ -68,7 +69,9 @@ const els = {
   monthSelect: document.querySelector("#monthSelect"),
   daySelect: document.querySelector("#daySelect"),
   todayButton: document.querySelector("#todayButton"),
+  syncButton: document.querySelector("#syncButton"),
   searchButton: document.querySelector("#searchButton"),
+  calendarPanel: document.querySelector(".calendar-panel"),
   calendarGrid: document.querySelector("#calendarGrid"),
   selectedDaySummary: document.querySelector("#selectedDaySummary"),
   monthExpense: document.querySelector("#monthExpense"),
@@ -154,7 +157,14 @@ function init() {
   els.monthSelect.addEventListener("change", handleDateControlChange);
   els.daySelect.addEventListener("change", handleDateControlChange);
   els.todayButton.addEventListener("click", () => selectDate(todayISO()));
+  els.syncButton.addEventListener("click", showSyncStatus);
   els.searchButton.addEventListener("click", openSearch);
+  els.calendarPanel.addEventListener("pointerdown", startCalendarSwipe);
+  els.calendarPanel.addEventListener("pointerup", finishCalendarSwipe);
+  els.calendarPanel.addEventListener("pointercancel", cancelCalendarSwipe);
+  els.calendarPanel.addEventListener("mousedown", startCalendarSwipe);
+  els.calendarPanel.addEventListener("mouseup", finishCalendarSwipe);
+  els.calendarPanel.addEventListener("mouseleave", cancelCalendarSwipe);
 
   els.quickForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -234,9 +244,19 @@ function initDateControls() {
 
 function syncDateControls() {
   const [year, month, day] = selectedDate.split("-").map(Number);
+  ensureYearOption(year);
   els.yearSelect.value = String(year);
   els.monthSelect.value = String(month);
   refreshDayOptions(year, month, day);
+}
+
+function ensureYearOption(year) {
+  const value = String(year);
+  if ([...els.yearSelect.options].some((option) => option.value === value)) return;
+  els.yearSelect.append(new Option(`${year} 年`, year));
+  [...els.yearSelect.options]
+    .sort((a, b) => Number(a.value) - Number(b.value))
+    .forEach((option) => els.yearSelect.append(option));
 }
 
 function refreshDayOptions(year, month, selectedDay) {
@@ -265,12 +285,55 @@ function selectDate(iso) {
   render();
 }
 
+function startCalendarSwipe(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (isInteractiveCalendarTarget(event.target)) {
+    calendarSwipeStart = null;
+    return;
+  }
+  calendarSwipeStart = { x: event.clientX, y: event.clientY };
+}
+
+function finishCalendarSwipe(event) {
+  if (!calendarSwipeStart) return;
+  const deltaX = event.clientX - calendarSwipeStart.x;
+  const deltaY = event.clientY - calendarSwipeStart.y;
+  calendarSwipeStart = null;
+
+  if (Math.abs(deltaX) < 55 || Math.abs(deltaX) < Math.abs(deltaY) * 1.4) return;
+  shiftCalendarMonth(deltaX < 0 ? -1 : 1);
+}
+
+function cancelCalendarSwipe() {
+  calendarSwipeStart = null;
+}
+
+function isInteractiveCalendarTarget(target) {
+  return Boolean(target.closest(".calendar-controls, input, select, textarea, a"));
+}
+
+function shiftCalendarMonth(monthDelta) {
+  const [year, month, day] = selectedDate.split("-").map(Number);
+  const targetMonth = new Date(year, month - 1 + monthDelta, 1);
+  const targetYear = targetMonth.getFullYear();
+  const targetMonthNumber = targetMonth.getMonth() + 1;
+  const targetDay = Math.min(day, daysInMonth(targetYear, targetMonthNumber));
+  selectedDate = localISO(new Date(targetYear, targetMonthNumber - 1, targetDay));
+  visibleMonth = selectedDate.slice(0, 7);
+  syncDateControls();
+  render();
+}
+
 function showScreen(name) {
   document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
   document.querySelector(`#${name}Screen`).classList.add("active");
   document.querySelectorAll(".bottom-nav button").forEach((button) => {
     button.classList.toggle("active", button.dataset.nav === name);
   });
+}
+
+function showSyncStatus() {
+  showToast("目前資料只存在本機，請到設定備份 JSON");
 }
 
 function openSearch() {

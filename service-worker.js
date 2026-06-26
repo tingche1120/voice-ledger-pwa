@@ -1,4 +1,4 @@
-const CACHE_NAME = "voice-ledger-prototype-A1.0-icons";
+const CACHE_NAME = "voice-ledger-prototype-A1.0.1-calendar-swipe";
 const ASSETS = [
   "./",
   "./index.html",

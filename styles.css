@@ -106,6 +106,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
+  touch-action: pan-y;
 }
 
 .calendar-controls {
