@@ -301,7 +301,7 @@ function finishCalendarSwipe(event) {
   calendarSwipeStart = null;
 
   if (Math.abs(deltaX) < 55 || Math.abs(deltaX) < Math.abs(deltaY) * 1.4) return;
-  shiftCalendarMonth(deltaX < 0 ? -1 : 1);
+  shiftCalendarMonth(deltaX < 0 ? 1 : -1);
 }
 
 function cancelCalendarSwipe() {
