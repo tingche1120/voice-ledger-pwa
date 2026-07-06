@@ -56,7 +56,7 @@ http://localhost:4173
 - 手機同 Wi-Fi 測試網址依電腦 IP 而定，例如：
 
 ```text
-http://192.168.0.10:4173/
+http://<你的電腦區網 IP>:4173/
 ```
 
 ### 資料保存方式
@@ -154,7 +154,7 @@ http://192.168.0.10:4173/
 啟動本機 server：
 
 ```powershell
-cd D:\Onedrive\codex-app-practice
+cd <project-folder>
 node server.js
 ```
 
@@ -164,7 +164,7 @@ node server.js
 http://localhost:4173
 ```
 
-如果要讓手機連進電腦測試，手機和電腦需在同一個 Wi-Fi，並確認 Windows 防火牆允許 TCP `4173`。
+如果要讓手機連進電腦測試，手機和電腦需在同一個私人 Wi-Fi，並確認 Windows 防火牆允許 TCP `4173`。測試完成後可關閉本機 server。
 
 ## 部署紀錄
 
