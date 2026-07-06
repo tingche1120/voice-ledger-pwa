@@ -1,4 +1,4 @@
-const CACHE_NAME = "voice-ledger-prototype-A1.0.2-calendar-swipe-direction";
+const CACHE_NAME = "voice-ledger-prototype-A1.1.2-month-summary";
 const ASSETS = [
   "./",
   "./index.html",

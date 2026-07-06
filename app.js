@@ -533,19 +533,7 @@ function parsePhrase(text) {
 }
 
 function parseLedgerItems(content, date, { fallback = false } = {}) {
-  const amountPattern = "[0-9０-９]+(?:[,.，][0-9０-９]+)?|[零一二兩三四五六七八九十百千萬]+";
-  const matcher = new RegExp(`([^0-9０-９零一二兩三四五六七八九十百千萬]+?)\\s*(${amountPattern})`, "g");
-  const items = [];
-  let match;
-
-  while ((match = matcher.exec(content))) {
-    const note = cleanNote(match[1]);
-    const amount = parseAmount(match[2]);
-    if (!note || !amount) continue;
-    const type = inferType(`${note}${match[2]}`);
-    const category = inferCategory(note, type);
-    items.push(draftRecord(note, amount, category, type, date));
-  }
+  const items = parseAmountAnchoredItems(content, date);
 
   if (items.length || !fallback) return items;
 
@@ -556,6 +544,93 @@ function parseLedgerItems(content, date, { fallback = false } = {}) {
   return [draftRecord(cleanNote(content) || category, amount, category, type, date)];
 }
 
+function parseAmountAnchoredItems(content, date) {
+  const tokens = tokenizeLedgerContent(content);
+  const usedTextIndexes = new Set();
+  const items = [];
+
+  tokens.forEach((token, index) => {
+    if (token.type !== "amount") return;
+    const noteIndex = findPairTextTokenIndex(tokens, index, usedTextIndexes);
+    if (noteIndex < 0) return;
+    usedTextIndexes.add(noteIndex);
+
+    const note = tokens[noteIndex].text;
+    const amount = parseAmount(token.text);
+    if (!note || !amount) return;
+    const type = inferType(`${note}${token.text}`);
+    const category = inferCategory(note, type);
+    items.push(draftRecord(note, amount, category, type, date));
+  });
+
+  return items;
+}
+
+function tokenizeLedgerContent(content) {
+  const amountMatches = findAmountMatches(content);
+  const tokens = [];
+  let cursor = 0;
+
+  amountMatches.forEach((amountMatch) => {
+    appendTextTokens(tokens, content.slice(cursor, amountMatch.index));
+    tokens.push({ type: "amount", text: amountMatch.text });
+    cursor = amountMatch.end;
+  });
+  appendTextTokens(tokens, content.slice(cursor));
+
+  return tokens;
+}
+
+function appendTextTokens(tokens, value) {
+  cleanNote(value)
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((text) => tokens.push({ type: "text", text }));
+}
+
+function findPairTextTokenIndex(tokens, amountIndex, usedTextIndexes) {
+  const previous = findPreviousUnusedTextTokenIndex(tokens, amountIndex, usedTextIndexes);
+  if (previous >= 0) return previous;
+  return findNextUnusedTextTokenIndex(tokens, amountIndex, usedTextIndexes);
+}
+
+function findPreviousUnusedTextTokenIndex(tokens, amountIndex, usedTextIndexes) {
+  for (let index = amountIndex - 1; index >= 0; index -= 1) {
+    if (tokens[index].type === "amount") return -1;
+    if (tokens[index].type === "text" && !usedTextIndexes.has(index)) return index;
+  }
+  return -1;
+}
+
+function findNextUnusedTextTokenIndex(tokens, amountIndex, usedTextIndexes) {
+  for (let index = amountIndex + 1; index < tokens.length; index += 1) {
+    if (tokens[index].type === "amount") return -1;
+    if (tokens[index].type === "text" && !usedTextIndexes.has(index)) return index;
+  }
+  return -1;
+}
+
+function findAmountMatches(content) {
+  const amountPattern = /[0-9０-９]+(?:[,.，][0-9０-９]+)?|[零一二兩三四五六七八九十百千萬]+/g;
+  const matches = [];
+  let match;
+  while ((match = amountPattern.exec(content))) {
+    const amountMatch = { text: match[0], index: match.index, end: match.index + match[0].length };
+    if (isPeriodRangeNumber(content, amountMatch)) continue;
+    matches.push(amountMatch);
+  }
+  return matches;
+}
+
+function isPeriodRangeNumber(content, amountMatch) {
+  const before = content.slice(0, amountMatch.index);
+  const after = content.slice(amountMatch.end);
+  const numberPattern = "[0-9０-９一二兩三四五六七八九十]{1,3}";
+  const startsMonthRange = new RegExp(`^\\s*月\\s*(?:到|至|[-~～])\\s*${numberPattern}\\s*月`).test(after);
+  const endsMonthRange = /月\s*(?:到|至|[-~～])\s*$/.test(before) && /^\s*月/.test(after);
+  return startsMonthRange || endsMonthRange;
+}
 function segmentPhraseByDate(text) {
   const tokens = findDateTokens(text);
   if (!tokens.length) {
@@ -581,7 +656,7 @@ function segmentPhraseByDate(text) {
 function findDateTokens(text) {
   const dateNumber = "[0-9０-９一二兩三四五六七八九十]{1,3}";
   const tokenPattern =
-    new RegExp(`(?:\\d{4}\\s*年\\s*)?${dateNumber}\\s*月\\s*${dateNumber}\\s*(?:日|號)?|(?:\\d{4}[\\/.-])?\\d{1,2}[\\/.-]\\d{1,2}|大前天|前天|昨天|今天|今日|明天|大後天|後天`, "g");
+    new RegExp(`(?:\\d{4}\\s*年\\s*)?${dateNumber}\\s*月\\s*${dateNumber}\\s*(?:日|號)?|(?:\\d{4}[\\/.-])?\\d{1,2}[\\/.-]\\d{1,2}|${dateNumber}\\s*(?:日|號)|大前天|前天|昨天|今天|今日|明天|大後天|後天`, "g");
   const tokens = [];
   let match;
 
@@ -634,6 +709,12 @@ function explicitDateTokenISO(token) {
     return dateFromParts(year, month, day);
   }
 
+  const dayOnly = token.match(new RegExp(`^${dateNumber}\\s*(?:日|號)$`));
+  if (dayOnly) {
+    const [year, month] = visibleMonth.split("-").map(Number);
+    const day = parseDateNumber(dayOnly[1]);
+    return dateFromParts(year, month, day);
+  }
   const slashDate = token.match(/^(?:(\d{4})[\/.-])?(\d{1,2})[\/.-](\d{1,2})$/);
   if (!slashDate) return null;
   const year = Number(slashDate[1]) || selectedCalendarYear();
@@ -892,7 +973,10 @@ function render() {
   els.monthBalance.textContent = formatCurrency(income - expense);
   renderCalendar();
   renderSelectedDaySummary();
-  renderRecords(els.recentList, records.slice(0, 5));
+  const selectedDayRecords = records
+    .filter((item) => item.date === selectedDate)
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  renderRecords(els.recentList, selectedDayRecords);
 
   const filtered = currentFilter === "all" ? records : records.filter((item) => item.type === currentFilter);
   renderRecords(els.recordList, filtered);
@@ -946,12 +1030,12 @@ function renderCalendar() {
 }
 
 function renderSelectedDaySummary() {
-  const rows = records.filter((item) => item.date === selectedDate);
-  const expense = sum(rows.filter((item) => item.type === "expense"));
-  const income = sum(rows.filter((item) => item.type === "income"));
+  const monthRecords = records.filter((item) => item.date.startsWith(visibleMonth));
+  const expense = sum(monthRecords.filter((item) => item.type === "expense"));
+  const income = sum(monthRecords.filter((item) => item.type === "income"));
   els.selectedDaySummary.innerHTML = `
     <strong>${formatFullDate(selectedDate)}</strong>
-    <span>支出 ${formatCurrency(expense)}｜收入 ${formatCurrency(income)}｜${rows.length} 筆</span>
+    <span>本月支出 ${formatCurrency(expense)}｜收入 ${formatCurrency(income)}｜${monthRecords.length} 筆</span>
     <button class="detail-button" id="monthDetailButton" type="button">明細</button>
   `;
   document.querySelector("#monthDetailButton").addEventListener("click", openMonthDetail);
