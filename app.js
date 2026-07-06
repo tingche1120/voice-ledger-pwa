@@ -1030,12 +1030,12 @@ function renderCalendar() {
 }
 
 function renderSelectedDaySummary() {
-  const monthRecords = records.filter((item) => item.date.startsWith(visibleMonth));
-  const expense = sum(monthRecords.filter((item) => item.type === "expense"));
-  const income = sum(monthRecords.filter((item) => item.type === "income"));
+  const rows = records.filter((item) => item.date === selectedDate);
+  const expense = sum(rows.filter((item) => item.type === "expense"));
+  const income = sum(rows.filter((item) => item.type === "income"));
   els.selectedDaySummary.innerHTML = `
     <strong>${formatFullDate(selectedDate)}</strong>
-    <span>本月支出 ${formatCurrency(expense)}｜收入 ${formatCurrency(income)}｜${monthRecords.length} 筆</span>
+    <span>支出 ${formatCurrency(expense)}｜收入 ${formatCurrency(income)}｜${rows.length} 筆</span>
     <button class="detail-button" id="monthDetailButton" type="button">明細</button>
   `;
   document.querySelector("#monthDetailButton").addEventListener("click", openMonthDetail);
