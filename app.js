@@ -524,7 +524,11 @@ function openPending(items, { mode, heard }) {
 }
 
 function parsePhrase(text) {
-  const compact = normalizeFullWidthDigits(text).replace(/[，,、。；;]/g, " ").replace(/\s+/g, " ").trim();
+  const compact = normalizeFullWidthDigits(text)
+    .replace(/[、。；;]/g, " ")
+    .replace(/[，,](?!\d{3}(?:\D|$))/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const items = segmentPhraseByDate(compact).flatMap((segment) => parseLedgerItems(segment.text, segment.date));
   if (items.length) return items;
 
@@ -582,11 +586,23 @@ function tokenizeLedgerContent(content) {
 }
 
 function appendTextTokens(tokens, value) {
-  cleanNote(value)
+  const parts = cleanNote(value)
     .split(/\s+/)
     .map((part) => part.trim())
-    .filter(Boolean)
-    .forEach((text) => tokens.push({ type: "text", text }));
+    .filter(Boolean);
+
+  parts.forEach((text) => {
+    const previous = tokens.at(-1);
+    if (previous?.type === "text" && shouldJoinMixedLanguageText(previous.text, text)) {
+      previous.text = `${previous.text} ${text}`;
+      return;
+    }
+    tokens.push({ type: "text", text });
+  });
+}
+
+function shouldJoinMixedLanguageText(previous, current) {
+  return /[a-z]/i.test(previous) || /[a-z]/i.test(current);
 }
 
 function findPairTextTokenIndex(tokens, amountIndex, usedTextIndexes) {
@@ -618,11 +634,24 @@ function findAmountMatches(content) {
   while ((match = amountPattern.exec(content))) {
     const amountMatch = { text: match[0], index: match.index, end: match.index + match[0].length };
     if (isPeriodRangeNumber(content, amountMatch)) continue;
+    if (isChineseNumberInsideWord(content, amountMatch)) continue;
     matches.push(amountMatch);
   }
   return matches;
 }
 
+function isChineseNumberInsideWord(content, amountMatch) {
+  if (/[0-9０-９]/.test(amountMatch.text)) return false;
+
+  const before = content[amountMatch.index - 1] || "";
+  const after = content[amountMatch.end] || "";
+  if (/^[元圓塊块]/.test(after)) return false;
+
+  const hasChineseBefore = /[\u3400-\u9fff]/.test(before);
+  const hasChineseAfter = /[\u3400-\u9fff]/.test(after);
+  const isSingleDigit = /^[一二兩三四五六七八九十]$/.test(amountMatch.text);
+  return (hasChineseBefore && hasChineseAfter) || (!hasChineseBefore && hasChineseAfter && isSingleDigit);
+}
 function isPeriodRangeNumber(content, amountMatch) {
   const before = content.slice(0, amountMatch.index);
   const after = content.slice(amountMatch.end);
