@@ -64,6 +64,11 @@ let activeRecognition = null;
 let voiceTranscript = "";
 let holdStarted = false;
 let ignoreNextClick = false;
+let suppressMicClickUntil = 0;
+let activeParseId = 0;
+let isParsingPhrase = false;
+let pendingSource = null;
+let pendingHeardText = "";
 let categoryDraftCategories = [];
 let categoryDraftHints = [];
 let calendarSwipeStart = null;
@@ -174,7 +179,7 @@ function init() {
 
   els.quickForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    handlePhrase(els.quickText.value);
+    if (!isParsingPhrase) handlePhrase(els.quickText.value);
   });
 
   els.micButton.addEventListener("pointerdown", startHoldVoiceInput);
@@ -405,7 +410,8 @@ function handleMicClick() {
     openKeyboardDictation();
     return;
   }
-  if (ignoreNextClick) {
+  if (isParsingPhrase || !els.confirmBackdrop.hidden) return;
+  if (ignoreNextClick || Date.now() < suppressMicClickUntil) {
     ignoreNextClick = false;
     return;
   }
@@ -418,17 +424,22 @@ function startHoldVoiceInput(event) {
     return;
   }
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (isParsingPhrase || !els.confirmBackdrop.hidden) return;
   ignoreNextClick = true;
+  suppressMicClickUntil = Date.now() + 1500;
   holdStarted = startVoiceInput({ holdMode: true });
 }
 
 function stopHoldVoiceInput() {
+  suppressMicClickUntil = Date.now() + 1500;
   if (!holdStarted) return;
   holdStarted = false;
   stopVoiceInput();
 }
 
 function startVoiceInput({ holdMode } = { holdMode: false }) {
+  if (isParsingPhrase || !els.confirmBackdrop.hidden) return false;
+
   const SpeechRecognition = supportsWebSpeech();
   if (!SpeechRecognition) {
     openKeyboardDictation();
@@ -466,17 +477,20 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
   recognition.onerror = () => {
     els.quickText.focus();
     activeRecognition = null;
+    voiceTranscript = "";
     holdStarted = false;
+    ignoreNextClick = false;
     resetListenState();
     showToast("語音沒有成功，請用鍵盤麥克風或文字輸入");
   };
 
   recognition.onend = () => {
-    const text = (voiceTranscript || els.quickText.value).trim();
+    const text = voiceTranscript.trim();
     activeRecognition = null;
+    voiceTranscript = "";
     holdStarted = false;
     resetListenState();
-    if (text) handlePhrase(text);
+    if (text && !isParsingPhrase) handlePhrase(text);
   };
 
   recognition.start();
@@ -533,11 +547,16 @@ function openKeyboardDictation() {
 
 async function handlePhrase(rawText) {
   const text = rawText.trim();
-  if (!text) return;
+  if (!text || isParsingPhrase) return;
+
+  const parseId = activeParseId + 1;
+  activeParseId = parseId;
+  setPhraseParsingState(true);
 
   try {
     showToast("AI 解析中");
     const aiItems = await parsePhraseWithAI(text);
+    if (!isCurrentParse(parseId)) return;
     if (aiItems.length) {
       openPending(aiItems, { mode: "create", heard: text, source: "ai" });
       showToast("AI 已完成解析");
@@ -545,15 +564,40 @@ async function handlePhrase(rawText) {
     }
     showToast("AI 沒找到可記錄金額，已改用本機解析");
   } catch {
+    if (!isCurrentParse(parseId) || hasAIPendingForText(text)) return;
     showToast("AI 解析失敗，已改用本機解析");
+  } finally {
+    if (isCurrentParse(parseId)) setPhraseParsingState(false);
   }
 
+  if (!isCurrentParse(parseId) || hasAIPendingForText(text)) return;
   openPending(parsePhrase(text), { mode: "create", heard: text, source: "local" });
+}
+
+function isCurrentParse(parseId) {
+  return parseId === activeParseId;
+}
+
+function setPhraseParsingState(value) {
+  isParsingPhrase = value;
+  const submitButton = els.quickForm.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = value;
+  els.micButton.disabled = value;
+}
+
+function hasAIPendingForText(text) {
+  return pendingSource === "ai" && normalizeComparableText(pendingHeardText) === normalizeComparableText(text);
+}
+
+function normalizeComparableText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function openPending(items, { mode, heard, source = "local" }) {
   pendingItems = items.map((item) => ({ ...item }));
   pendingMode = mode;
+  pendingSource = source;
+  pendingHeardText = heard || "";
   els.confirmMode.textContent = confirmModeLabel(mode, source);
   els.confirmTitle.textContent = mode === "edit" ? "修改這筆" : `準備記錄 ${pendingItems.length} 筆`;
   els.heardText.textContent = heard ? `「${heard}」` : "";
@@ -1070,6 +1114,8 @@ function closeConfirm() {
   els.confirmBackdrop.hidden = true;
   pendingItems = [];
   pendingMode = "create";
+  pendingSource = null;
+  pendingHeardText = "";
 }
 
 function editRecord(id) {
