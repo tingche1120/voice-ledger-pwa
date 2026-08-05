@@ -4,9 +4,9 @@
 
 ## 目前進度
 
-目前版本：`A1.2`
+目前版本：`A1.3`
 
-已完成 A1.0 原型，A1.2 優化語音文字記帳解析：
+已完成 A1.0 原型，A1.3 加入 AI 解析與中文 / English 語音語言切換：
 
 - 可加入 iPhone 主畫面的 PWA。
 - 首頁包含月曆、快速記帳、本月支出、本月收入、結餘與選取日期紀錄。
@@ -20,19 +20,7 @@
 - 支援自訂分類與關鍵字，設定頁可進入編輯模式新增、刪除、修改關鍵字。
 - 支援 JSON 備份、JSON 還原與 CSV 匯出。
 - 已加入 PWA icon 與 iPhone 主畫面名稱。
-- 已部署到 GitHub repo：`tingche1120/voice-ledger-pwa`。
-
-GitHub Pages 預計網址：
-
-```text
-https://tingche1120.github.io/voice-ledger-pwa/
-```
-
-若網址顯示 404，請到 GitHub repo 的 `Settings -> Pages` 啟用：
-
-- Source: `Deploy from a branch`
-- Branch: `main`
-- Folder: `/ (root)`
+- 目前作為個人測試用 PWA，不在 README 公開部署網址。
 
 ## 核心紀錄
 
@@ -62,12 +50,6 @@ http://<你的電腦區網 IP>:4173/
 ### 資料保存方式
 
 目前資料存在使用者裝置的 `localStorage`，不同使用者不會互相看到資料。
-
-使用的 key：
-
-- `voice-ledger-records`：記帳紀錄
-- `voice-ledger-categories`：自訂分類
-- `voice-ledger-category-hints`：分類關鍵字
 
 目前沒有雲端同步。換手機時請使用：
 
@@ -168,13 +150,7 @@ http://localhost:4173
 
 ## 部署紀錄
 
-目前已推送到：
-
-```text
-https://github.com/tingche1120/voice-ledger-pwa
-```
-
-部署內容來自純靜態檔案，可用 GitHub Pages 直接發布。
+目前作為個人測試部署使用，不在 README 公開 repo 或 Pages 網址。
 
 公開前已確認沒有加入：
 

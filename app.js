@@ -30,6 +30,10 @@ const defaultCategoryHints = [
 const recordsKey = "voice-ledger-records";
 const categoriesKey = "voice-ledger-categories";
 const categoryHintsKey = "voice-ledger-category-hints";
+const speechLanguageKey = "voice-ledger-speech-language";
+const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
+const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
+const aiParseTimeoutMs = 8000;
 
 let categories = loadCategories();
 let categoryHints = loadCategoryHints();
@@ -50,6 +54,7 @@ const sampleRecords = [
 ];
 
 let records = loadRecords();
+let speechLanguage = loadSpeechLanguage();
 let pendingItems = [];
 let pendingMode = "create";
 let currentFilter = "all";
@@ -106,6 +111,7 @@ const els = {
   searchResults: document.querySelector("#searchResults"),
   toast: document.querySelector("#toast"),
   speechSupport: document.querySelector("#speechSupport"),
+  speechLanguageSelect: document.querySelector("#speechLanguageSelect"),
   clearButton: document.querySelector("#clearButton"),
   backupJsonButton: document.querySelector("#backupJsonButton"),
   restoreJsonButton: document.querySelector("#restoreJsonButton"),
@@ -221,6 +227,7 @@ function init() {
   els.categoryForm.addEventListener("submit", addCategoryFromForm);
   els.categoryEditor.addEventListener("change", handleCategoryEditorChange);
   els.categoryEditor.addEventListener("click", handleCategoryEditorClick);
+  els.speechLanguageSelect?.addEventListener("change", handleSpeechLanguageChange);
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelp.addEventListener("click", closeHelp);
   els.helpBackdrop.addEventListener("click", (event) => {
@@ -434,7 +441,7 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
   }
 
   const recognition = new SpeechRecognition();
-  recognition.lang = "zh-TW";
+  recognition.lang = speechLanguage;
   recognition.continuous = holdMode;
   recognition.interimResults = holdMode;
   activeRecognition = recognition;
@@ -492,6 +499,24 @@ function supportsWebSpeech() {
   return window.SpeechRecognition || window.webkitSpeechRecognition;
 }
 
+function handleSpeechLanguageChange() {
+  speechLanguage = supportedSpeechLanguage(els.speechLanguageSelect.value);
+  localStorage.setItem(speechLanguageKey, speechLanguage);
+  updateSpeechSupportLabel(supportsWebSpeech());
+}
+
+function updateSpeechSupportLabel(SpeechRecognition) {
+  els.speechSupport.textContent = SpeechRecognition ? speechLanguages[speechLanguage] : "用鍵盤麥克風";
+}
+
+function loadSpeechLanguage() {
+  return supportedSpeechLanguage(localStorage.getItem(speechLanguageKey));
+}
+
+function supportedSpeechLanguage(value) {
+  return Object.prototype.hasOwnProperty.call(speechLanguages, value) ? value : "zh-TW";
+}
+
 function setKeyboardDictationMode() {
   els.listenState.querySelector("p").textContent = "開啟鍵盤";
   els.micButton.setAttribute("aria-label", "開啟鍵盤麥克風輸入");
@@ -506,21 +531,81 @@ function openKeyboardDictation() {
   showToast("請按鍵盤上的麥克風說話");
 }
 
-function handlePhrase(rawText) {
+async function handlePhrase(rawText) {
   const text = rawText.trim();
   if (!text) return;
-  openPending(parsePhrase(text), { mode: "create", heard: text });
+
+  try {
+    showToast("AI 解析中");
+    const aiItems = await parsePhraseWithAI(text);
+    if (aiItems.length) {
+      openPending(aiItems, { mode: "create", heard: text, source: "ai" });
+      showToast("AI 已完成解析");
+      return;
+    }
+    showToast("AI 沒找到可記錄金額，已改用本機解析");
+  } catch {
+    showToast("AI 解析失敗，已改用本機解析");
+  }
+
+  openPending(parsePhrase(text), { mode: "create", heard: text, source: "local" });
 }
 
-function openPending(items, { mode, heard }) {
+function openPending(items, { mode, heard, source = "local" }) {
   pendingItems = items.map((item) => ({ ...item }));
   pendingMode = mode;
-  els.confirmMode.textContent = mode === "edit" ? "編輯紀錄" : "我聽到";
+  els.confirmMode.textContent = confirmModeLabel(mode, source);
   els.confirmTitle.textContent = mode === "edit" ? "修改這筆" : `準備記錄 ${pendingItems.length} 筆`;
   els.heardText.textContent = heard ? `「${heard}」` : "";
   els.saveConfirm.textContent = mode === "edit" ? "儲存修改" : "全部儲存";
   renderPending();
   els.confirmBackdrop.hidden = false;
+}
+
+function confirmModeLabel(mode, source) {
+  if (mode === "edit") return "編輯紀錄";
+  return source === "ai" ? "AI 已解析" : "本機解析";
+}
+
+async function parsePhraseWithAI(text) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), aiParseTimeoutMs);
+
+  try {
+    const response = await fetch(aiParseEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, selectedDate, visibleMonth }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new Error("AI request failed");
+    const payload = await response.json();
+    return normalizeAIRecords(payload?.result?.records);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function normalizeAIRecords(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const type = item?.type === "income" ? "income" : "expense";
+      const amount = Number(item?.amount);
+      const date = typeof item?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : selectedDate;
+      const category = normalizeAICategory(item?.category, type);
+      const note = String(item?.note || category).trim();
+      if (!Number.isFinite(amount) || amount <= 0) return null;
+      return draftRecord(note, Math.round(amount), category, type, date);
+    })
+    .filter(Boolean);
+}
+
+function normalizeAICategory(value, type) {
+  const category = String(value || "").trim();
+  if (category) return category;
+  return type === "income" ? "薪資" : "其他";
 }
 
 function parsePhrase(text) {
@@ -914,7 +999,8 @@ function renderPending() {
 }
 
 function categoryOptions(selected) {
-  return categories.map((name) => `<option value="${escapeHTML(name)}" ${name === selected ? "selected" : ""}>${escapeHTML(name)}</option>`).join("");
+  const optionCategories = categories.includes(selected) || !selected ? categories : [...categories.filter((name) => name !== "其他"), selected, "其他"];
+  return optionCategories.map((name) => `<option value="${escapeHTML(name)}" ${name === selected ? "selected" : ""}>${escapeHTML(name)}</option>`).join("");
 }
 
 function updatePendingFromControl(event) {
@@ -950,6 +1036,8 @@ function savePending() {
     updatedAt: new Date().toISOString(),
   }));
 
+  saveMissingCategoriesFromPending(cleaned);
+
   if (pendingMode === "edit") {
     const update = cleaned[0];
     records = records.map((item) => (item.id === update.id ? { ...item, ...update } : item));
@@ -968,6 +1056,14 @@ function savePending() {
   render();
   closeConfirm();
   els.quickText.value = "";
+}
+
+function saveMissingCategoriesFromPending(items) {
+  const missing = uniqueStrings(items.map((item) => item.category)).filter((category) => category && !categories.includes(category));
+  if (!missing.length) return;
+  categories = [...categories.filter((category) => category !== "其他"), ...missing, "其他"];
+  persistCategorySettings();
+  renderCategorySummary();
 }
 
 function closeConfirm() {
@@ -1588,7 +1684,7 @@ async function shareOrDownload(blob, fileName, successMessage) {
 
 function csvCell(value) {
   const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return /["\n,]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function persist() {

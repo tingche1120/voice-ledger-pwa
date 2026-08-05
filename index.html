@@ -156,9 +156,16 @@
             <span>語音辨識</span>
             <strong id="speechSupport">檢查中</strong>
           </article>
+          <article>
+            <span>語音語言</span>
+            <select class="settings-select" id="speechLanguageSelect" aria-label="語音語言">
+              <option value="zh-TW">中文</option>
+              <option value="en-US">English</option>
+            </select>
+          </article>
         </div>
         <button class="help-button" type="button" id="helpButton">使用說明</button>
-        <p class="app-version">A1.2</p>
+        <p class="app-version">A1.3</p>
       </section>
 
       <nav class="bottom-nav" aria-label="主要導覽">
@@ -242,20 +249,28 @@
             <p>在輸入框打「午餐100」或「午餐一百」，按解析後確認儲存。</p>
           </section>
           <section>
+            <h3>AI 解析</h3>
+            <p>系統會先用 AI 判斷日期、金額、類型與分類；確認視窗左上角顯示「AI 已解析」代表 AI 成功。</p>
+          </section>
+          <section>
+            <h3>本機解析</h3>
+            <p>如果 AI 暫時失敗、沒網路或沒有找到可記錄金額，會自動改用本機解析，確認視窗會顯示「本機解析」。</p>
+          </section>
+          <section>
             <h3>一次記多筆</h3>
-            <p>可以輸入「早餐80 午餐120 晚餐200」，會自動拆成多筆。</p>
+            <p>可以輸入「早餐80 午餐120 晚餐200」，或用自然語句說明多筆收支，儲存前都能逐筆修改。</p>
           </section>
           <section>
-            <h3>指定日期</h3>
-            <p>支援「昨天晚餐300」、「4月25午餐500」、「2026/2/10保險3000」。</p>
+            <h3>語音語言</h3>
+            <p>設定頁可切換「中文」或「English」。中文適合中文口語，English 適合整句英文；中英混講時可先修正文字框再解析。</p>
           </section>
           <section>
-            <h3>語音輸入</h3>
-            <p>若瀏覽器不支援網頁語音，按綠色按鈕會開啟鍵盤，再按鍵盤麥克風說話。</p>
+            <h3>確認後才儲存</h3>
+            <p>AI 只負責解析，不保存原始 AI JSON。只有按下「全部儲存」後，確認過的紀錄才會寫入本機資料。</p>
           </section>
           <section>
-            <h3>搜尋與備份</h3>
-            <p>月曆右上角可搜尋所有紀錄；設定頁可備份 JSON、還原 JSON 或匯出 CSV。</p>
+            <h3>日期與備份</h3>
+            <p>未指定日期會記到目前選取日；「昨天」或「24號」會依目前日曆判斷。設定頁可備份 JSON、還原資料或匯出 CSV。</p>
           </section>
         </div>
       </section>
