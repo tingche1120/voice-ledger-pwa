@@ -163,9 +163,15 @@
               <option value="en-US">English</option>
             </select>
           </article>
+          <article class="settings-diagnostics">
+            <span>語音診斷（暫時）</span>
+            <p>重現問題後，回到這裡複製紀錄給我。重新開啟 App 會清除；不記錄聲音或記帳內容。</p>
+            <textarea id="voiceDiagnosticLog" rows="9" readonly spellcheck="false" aria-label="語音診斷紀錄"></textarea>
+            <button type="button" id="copyVoiceDiagnosticsButton">複製診斷紀錄</button>
+          </article>
         </div>
         <button class="help-button" type="button" id="helpButton">使用說明</button>
-        <p class="app-version">A1.3.1</p>
+        <p class="app-version">A1.3.2</p>
       </section>
 
       <nav class="bottom-nav" aria-label="主要導覽">

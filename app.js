@@ -34,6 +34,8 @@ const speechLanguageKey = "voice-ledger-speech-language";
 const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
 const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
 const aiParseTimeoutMs = 8000;
+const diagnosticVersion = "A1.3.2";
+const diagnosticLimit = 80;
 
 let categories = loadCategories();
 let categoryHints = loadCategoryHints();
@@ -62,6 +64,9 @@ let selectedDate = todayISO();
 let visibleMonth = selectedDate.slice(0, 7);
 let activeRecognition = null;
 let voiceTranscript = "";
+let recognitionSequence = 0;
+const diagnosticStart = Date.now();
+const diagnosticLines = [];
 let holdStarted = false;
 let ignoreNextClick = false;
 let suppressMicClickUntil = 0;
@@ -117,6 +122,8 @@ const els = {
   toast: document.querySelector("#toast"),
   speechSupport: document.querySelector("#speechSupport"),
   speechLanguageSelect: document.querySelector("#speechLanguageSelect"),
+  voiceDiagnosticLog: document.querySelector("#voiceDiagnosticLog"),
+  copyVoiceDiagnosticsButton: document.querySelector("#copyVoiceDiagnosticsButton"),
   clearButton: document.querySelector("#clearButton"),
   backupJsonButton: document.querySelector("#backupJsonButton"),
   restoreJsonButton: document.querySelector("#restoreJsonButton"),
@@ -150,6 +157,7 @@ function init() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   els.speechSupport.textContent = SpeechRecognition ? "可使用" : "用鍵盤麥克風";
   if (!SpeechRecognition) setKeyboardDictationMode();
+  logVoiceDiagnostic("app-ready", `recognition=${Boolean(SpeechRecognition)} language=${speechLanguage}`);
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => showScreen(button.dataset.nav));
@@ -233,6 +241,7 @@ function init() {
   els.categoryEditor.addEventListener("change", handleCategoryEditorChange);
   els.categoryEditor.addEventListener("click", handleCategoryEditorClick);
   els.speechLanguageSelect?.addEventListener("change", handleSpeechLanguageChange);
+  els.copyVoiceDiagnosticsButton.addEventListener("click", copyVoiceDiagnostics);
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelp.addEventListener("click", closeHelp);
   els.helpBackdrop.addEventListener("click", (event) => {
@@ -406,6 +415,7 @@ function handleSearchResultClick(event) {
 }
 
 function handleMicClick() {
+  logVoiceDiagnostic("mic-click", `suppressed=${ignoreNextClick || Date.now() < suppressMicClickUntil}`);
   if (!supportsWebSpeech()) {
     openKeyboardDictation();
     return;
@@ -419,6 +429,7 @@ function handleMicClick() {
 }
 
 function startHoldVoiceInput(event) {
+  logVoiceDiagnostic("pointerdown", `pointer=${event.pointerType || "unknown"}`);
   if (!supportsWebSpeech()) {
     openKeyboardDictation();
     return;
@@ -430,7 +441,8 @@ function startHoldVoiceInput(event) {
   holdStarted = startVoiceInput({ holdMode: true });
 }
 
-function stopHoldVoiceInput() {
+function stopHoldVoiceInput(event) {
+  logVoiceDiagnostic(event?.type || "pointer-stop", `holdStarted=${holdStarted}`);
   suppressMicClickUntil = Date.now() + 1500;
   if (!holdStarted) return;
   holdStarted = false;
@@ -438,7 +450,10 @@ function stopHoldVoiceInput() {
 }
 
 function startVoiceInput({ holdMode } = { holdMode: false }) {
-  if (isParsingPhrase || !els.confirmBackdrop.hidden) return false;
+  if (isParsingPhrase || !els.confirmBackdrop.hidden) {
+    logVoiceDiagnostic("recognition-blocked", `parsing=${isParsingPhrase} confirming=${!els.confirmBackdrop.hidden}`);
+    return false;
+  }
 
   const SpeechRecognition = supportsWebSpeech();
   if (!SpeechRecognition) {
@@ -447,19 +462,28 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
   }
 
   if (activeRecognition) {
+    logVoiceDiagnostic("recognition-already-active", `hold=${holdMode}`);
     if (!holdMode) stopVoiceInput();
     return false;
   }
 
   const recognition = new SpeechRecognition();
+  const recognitionId = ++recognitionSequence;
   recognition.lang = speechLanguage;
   recognition.continuous = holdMode;
   recognition.interimResults = holdMode;
   activeRecognition = recognition;
   voiceTranscript = "";
+  logVoiceDiagnostic(`#${recognitionId} created`, `hold=${holdMode} language=${speechLanguage}`);
 
   els.listenState.classList.add("listening");
   els.listenState.querySelector("p").textContent = holdMode ? "放開後解析" : "正在聽";
+
+  recognition.onstart = () => logVoiceDiagnostic(`#${recognitionId} start`);
+  recognition.onaudiostart = () => logVoiceDiagnostic(`#${recognitionId} audio-start`);
+  recognition.onspeechstart = () => logVoiceDiagnostic(`#${recognitionId} speech-start`);
+  recognition.onspeechend = () => logVoiceDiagnostic(`#${recognitionId} speech-end`);
+  recognition.onaudioend = () => logVoiceDiagnostic(`#${recognitionId} audio-end`);
 
   recognition.onresult = (event) => {
     let finalText = "";
@@ -470,21 +494,24 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
       else previewText += transcript;
     }
     if (finalText) voiceTranscript += finalText;
+    logVoiceDiagnostic(`#${recognitionId} result`, `final=${Boolean(finalText)} interim=${Boolean(previewText)}`);
     els.quickText.value = `${voiceTranscript}${previewText}`.trim();
     if (!holdMode && voiceTranscript) stopVoiceInput();
   };
 
-  recognition.onerror = () => {
+  recognition.onerror = (event) => {
+    logVoiceDiagnostic(`#${recognitionId} error`, `code=${event?.error || "unknown"} current=${activeRecognition === recognition}`);
     els.quickText.focus();
     activeRecognition = null;
     voiceTranscript = "";
     holdStarted = false;
     ignoreNextClick = false;
     resetListenState();
-    showToast("語音沒有成功，請用鍵盤麥克風或文字輸入");
+    showToast("語音沒有成功，請到設定複製語音診斷紀錄");
   };
 
   recognition.onend = () => {
+    logVoiceDiagnostic(`#${recognitionId} end`, `current=${activeRecognition === recognition} hasResult=${Boolean(voiceTranscript.trim())}`);
     const text = voiceTranscript.trim();
     activeRecognition = null;
     voiceTranscript = "";
@@ -493,12 +520,23 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
     if (text && !isParsingPhrase) handlePhrase(text);
   };
 
-  recognition.start();
+  logVoiceDiagnostic(`#${recognitionId} start-called`);
+  try {
+    recognition.start();
+  } catch (error) {
+    logVoiceDiagnostic(`#${recognitionId} start-threw`, `name=${error?.name || "unknown"}`);
+    activeRecognition = null;
+    holdStarted = false;
+    resetListenState();
+    showToast("語音沒有成功，請到設定複製語音診斷紀錄");
+    return false;
+  }
   return true;
 }
 
 function stopVoiceInput() {
   if (!activeRecognition) return;
+  logVoiceDiagnostic("recognition-stop-called");
   els.listenState.querySelector("p").textContent = "解析中";
   activeRecognition.stop();
 }
@@ -513,9 +551,36 @@ function supportsWebSpeech() {
   return window.SpeechRecognition || window.webkitSpeechRecognition;
 }
 
+function logVoiceDiagnostic(event, details = "") {
+  const time = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+  const elapsed = ((Date.now() - diagnosticStart) / 1000).toFixed(2);
+  diagnosticLines.push(`${time} +${elapsed}s ${event}${details ? ` ${details}` : ""}`);
+  if (diagnosticLines.length > diagnosticLimit) diagnosticLines.shift();
+  if (els.voiceDiagnosticLog) {
+    els.voiceDiagnosticLog.value = `Voice Ledger ${diagnosticVersion}\n只記錄事件，不包含語音或記帳內容。重新開啟 App 後清除。\n\n${diagnosticLines.join("\n")}`;
+    els.voiceDiagnosticLog.scrollTop = els.voiceDiagnosticLog.scrollHeight;
+  }
+}
+
+async function copyVoiceDiagnostics() {
+  const log = els.voiceDiagnosticLog.value;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(log);
+    showToast("語音診斷紀錄已複製");
+    return;
+  } catch {
+    els.voiceDiagnosticLog.focus();
+    els.voiceDiagnosticLog.select();
+    if (document.execCommand?.("copy")) showToast("語音診斷紀錄已複製");
+    else showToast("請長按診斷紀錄，選擇全選並複製");
+  }
+}
+
 function handleSpeechLanguageChange() {
   speechLanguage = supportedSpeechLanguage(els.speechLanguageSelect.value);
   localStorage.setItem(speechLanguageKey, speechLanguage);
+  logVoiceDiagnostic("language-changed", `language=${speechLanguage}`);
   updateSpeechSupportLabel(supportsWebSpeech());
 }
 
@@ -552,18 +617,21 @@ async function handlePhrase(rawText) {
   const parseId = activeParseId + 1;
   activeParseId = parseId;
   setPhraseParsingState(true);
+  logVoiceDiagnostic(`AI #${parseId} parse-start`);
 
   try {
     showToast("AI 解析中");
     const aiItems = await parsePhraseWithAI(text);
     if (!isCurrentParse(parseId)) return;
+    logVoiceDiagnostic(`AI #${parseId} parse-result`, `records=${aiItems.length}`);
     if (aiItems.length) {
       openPending(aiItems, { mode: "create", heard: text, source: "ai" });
       showToast("AI 已完成解析");
       return;
     }
     showToast("AI 沒找到可記錄金額，已改用本機解析");
-  } catch {
+  } catch (error) {
+    logVoiceDiagnostic(`AI #${parseId} parse-error`, `name=${error?.name || "unknown"}`);
     if (!isCurrentParse(parseId) || hasAIPendingForText(text)) return;
     showToast("AI 解析失敗，已改用本機解析");
   } finally {
@@ -613,15 +681,21 @@ function confirmModeLabel(mode, source) {
 
 async function parsePhraseWithAI(text) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), aiParseTimeoutMs);
+  const startedAt = Date.now();
+  const timeoutId = setTimeout(() => {
+    logVoiceDiagnostic("AI fetch-timeout", `after=${aiParseTimeoutMs}ms`);
+    controller.abort();
+  }, aiParseTimeoutMs);
 
   try {
+    logVoiceDiagnostic("AI fetch-start");
     const response = await fetch(aiParseEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, selectedDate, visibleMonth }),
       signal: controller.signal,
     });
+    logVoiceDiagnostic("AI fetch-response", `status=${response.status} elapsed=${Date.now() - startedAt}ms`);
 
     if (!response.ok) throw new Error("AI request failed");
     const payload = await response.json();

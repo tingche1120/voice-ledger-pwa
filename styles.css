@@ -626,6 +626,40 @@ h2 {
   align-items: center;
 }
 
+.settings-list article.settings-diagnostics {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.settings-diagnostics p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-diagnostics textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: 11px/1.5 ui-monospace, Consolas, monospace;
+  resize: vertical;
+}
+
+.settings-diagnostics button {
+  min-height: 40px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+}
+
 .settings-list strong {
   max-width: 170px;
   text-align: right;
