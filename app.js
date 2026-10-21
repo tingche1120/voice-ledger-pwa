@@ -31,10 +31,11 @@ const recordsKey = "voice-ledger-records";
 const categoriesKey = "voice-ledger-categories";
 const categoryHintsKey = "voice-ledger-category-hints";
 const speechLanguageKey = "voice-ledger-speech-language";
+const voiceModeKey = "voice-ledger-recognition-mode";
 const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
 const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
 const aiParseTimeoutMs = 8000;
-const diagnosticVersion = "A1.3.2";
+const diagnosticVersion = "A1.3.3";
 const diagnosticLimit = 80;
 
 let categories = loadCategories();
@@ -57,6 +58,7 @@ const sampleRecords = [
 
 let records = loadRecords();
 let speechLanguage = loadSpeechLanguage();
+let voiceMode = loadVoiceMode();
 let pendingItems = [];
 let pendingMode = "create";
 let currentFilter = "all";
@@ -122,6 +124,7 @@ const els = {
   toast: document.querySelector("#toast"),
   speechSupport: document.querySelector("#speechSupport"),
   speechLanguageSelect: document.querySelector("#speechLanguageSelect"),
+  voiceModeSelect: document.querySelector("#voiceModeSelect"),
   voiceDiagnosticLog: document.querySelector("#voiceDiagnosticLog"),
   copyVoiceDiagnosticsButton: document.querySelector("#copyVoiceDiagnosticsButton"),
   clearButton: document.querySelector("#clearButton"),
@@ -156,8 +159,9 @@ function init() {
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   els.speechSupport.textContent = SpeechRecognition ? "可使用" : "用鍵盤麥克風";
+  els.voiceModeSelect.value = voiceMode;
   if (!SpeechRecognition) setKeyboardDictationMode();
-  logVoiceDiagnostic("app-ready", `recognition=${Boolean(SpeechRecognition)} language=${speechLanguage}`);
+  logVoiceDiagnostic("app-ready", `recognition=${Boolean(SpeechRecognition)} language=${speechLanguage} mode=${voiceMode}`);
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => showScreen(button.dataset.nav));
@@ -241,6 +245,7 @@ function init() {
   els.categoryEditor.addEventListener("change", handleCategoryEditorChange);
   els.categoryEditor.addEventListener("click", handleCategoryEditorClick);
   els.speechLanguageSelect?.addEventListener("change", handleSpeechLanguageChange);
+  els.voiceModeSelect.addEventListener("change", handleVoiceModeChange);
   els.copyVoiceDiagnosticsButton.addEventListener("click", copyVoiceDiagnostics);
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelp.addEventListener("click", closeHelp);
@@ -470,11 +475,11 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
   const recognition = new SpeechRecognition();
   const recognitionId = ++recognitionSequence;
   recognition.lang = speechLanguage;
-  recognition.continuous = holdMode;
+  recognition.continuous = holdMode && voiceMode === "continuous";
   recognition.interimResults = holdMode;
   activeRecognition = recognition;
   voiceTranscript = "";
-  logVoiceDiagnostic(`#${recognitionId} created`, `hold=${holdMode} language=${speechLanguage}`);
+  logVoiceDiagnostic(`#${recognitionId} created`, `hold=${holdMode} language=${speechLanguage} mode=${voiceMode}`);
 
   els.listenState.classList.add("listening");
   els.listenState.querySelector("p").textContent = holdMode ? "放開後解析" : "正在聽";
@@ -584,12 +589,26 @@ function handleSpeechLanguageChange() {
   updateSpeechSupportLabel(supportsWebSpeech());
 }
 
+function handleVoiceModeChange() {
+  voiceMode = supportedVoiceMode(els.voiceModeSelect.value);
+  localStorage.setItem(voiceModeKey, voiceMode);
+  logVoiceDiagnostic("mode-changed", `mode=${voiceMode}`);
+}
+
 function updateSpeechSupportLabel(SpeechRecognition) {
   els.speechSupport.textContent = SpeechRecognition ? speechLanguages[speechLanguage] : "用鍵盤麥克風";
 }
 
 function loadSpeechLanguage() {
   return supportedSpeechLanguage(localStorage.getItem(speechLanguageKey));
+}
+
+function loadVoiceMode() {
+  return supportedVoiceMode(localStorage.getItem(voiceModeKey));
+}
+
+function supportedVoiceMode(value) {
+  return value === "single" ? "single" : "continuous";
 }
 
 function supportedSpeechLanguage(value) {

@@ -632,6 +632,18 @@ h2 {
   gap: 8px;
 }
 
+.settings-list article.settings-voice-mode {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-voice-mode p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .settings-diagnostics p {
   margin: 0;
   color: var(--muted);
