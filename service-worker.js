@@ -1,4 +1,4 @@
-const CACHE_NAME = "voice-ledger-prototype-A1.3.3-voice-mode-test";
+const CACHE_NAME = "voice-ledger-prototype-A1.3.4-voice-session-reuse";
 const ASSETS = [
   "./",
   "./index.html",

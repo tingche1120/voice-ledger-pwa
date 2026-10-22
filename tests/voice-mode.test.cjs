@@ -54,15 +54,15 @@ app.instances[0].onend();
 
 app.element("#voiceModeSelect").value = "single";
 vm.runInContext("handleVoiceModeChange(); startVoiceInput({ holdMode: true })", app.context);
-assert.equal(app.instances[1].continuous, false, "單句模式應關閉持續辨識");
-assert.equal(app.instances[1].interimResults, true, "按住說話仍需顯示暫時辨識文字");
+assert.equal(app.instances[0].continuous, false, "單句模式應關閉持續辨識");
+assert.equal(app.instances[0].interimResults, true, "按住說話仍需顯示暫時辨識文字");
 assert.equal(app.storage.get("voice-ledger-recognition-mode"), "single");
 assert.match(app.element("#voiceDiagnosticLog").value, /mode=single/);
-app.instances[1].onend();
+app.instances[0].onend();
 
 app.element("#voiceModeSelect").value = "continuous";
 vm.runInContext("handleVoiceModeChange(); startVoiceInput({ holdMode: true })", app.context);
-assert.equal(app.instances[2].continuous, true, "切回目前模式應還原原本行為");
+assert.equal(app.instances[0].continuous, true, "切回目前模式應還原原本行為");
 
 const reopened = makeApp("single");
 vm.runInContext("startVoiceInput({ holdMode: true })", reopened.context);
