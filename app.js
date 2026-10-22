@@ -32,10 +32,11 @@ const categoriesKey = "voice-ledger-categories";
 const categoryHintsKey = "voice-ledger-category-hints";
 const speechLanguageKey = "voice-ledger-speech-language";
 const voiceModeKey = "voice-ledger-recognition-mode";
+const parserModeKey = "voice-ledger-parser-mode";
 const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
 const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
 const aiParseTimeoutMs = 8000;
-const diagnosticVersion = "A1.3.4";
+const diagnosticVersion = "A1.3.5";
 const diagnosticLimit = 80;
 
 let categories = loadCategories();
@@ -59,6 +60,7 @@ const sampleRecords = [
 let records = loadRecords();
 let speechLanguage = loadSpeechLanguage();
 let voiceMode = loadVoiceMode();
+let parserMode = loadParserMode();
 let pendingItems = [];
 let pendingMode = "create";
 let currentFilter = "all";
@@ -126,6 +128,7 @@ const els = {
   speechSupport: document.querySelector("#speechSupport"),
   speechLanguageSelect: document.querySelector("#speechLanguageSelect"),
   voiceModeSelect: document.querySelector("#voiceModeSelect"),
+  parserModeSelect: document.querySelector("#parserModeSelect"),
   voiceDiagnosticLog: document.querySelector("#voiceDiagnosticLog"),
   copyVoiceDiagnosticsButton: document.querySelector("#copyVoiceDiagnosticsButton"),
   clearButton: document.querySelector("#clearButton"),
@@ -161,8 +164,9 @@ function init() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   els.speechSupport.textContent = SpeechRecognition ? "可使用" : "用鍵盤麥克風";
   els.voiceModeSelect.value = voiceMode;
+  els.parserModeSelect.value = parserMode;
   if (!SpeechRecognition) setKeyboardDictationMode();
-  logVoiceDiagnostic("app-ready", `recognition=${Boolean(SpeechRecognition)} language=${speechLanguage} mode=${voiceMode}`);
+  logVoiceDiagnostic("app-ready", `recognition=${Boolean(SpeechRecognition)} language=${speechLanguage} mode=${voiceMode} parser=${parserMode}`);
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => showScreen(button.dataset.nav));
@@ -247,6 +251,7 @@ function init() {
   els.categoryEditor.addEventListener("click", handleCategoryEditorClick);
   els.speechLanguageSelect?.addEventListener("change", handleSpeechLanguageChange);
   els.voiceModeSelect.addEventListener("change", handleVoiceModeChange);
+  els.parserModeSelect.addEventListener("change", handleParserModeChange);
   els.copyVoiceDiagnosticsButton.addEventListener("click", copyVoiceDiagnostics);
   els.helpButton.addEventListener("click", openHelp);
   els.closeHelp.addEventListener("click", closeHelp);
@@ -605,6 +610,12 @@ function handleVoiceModeChange() {
   logVoiceDiagnostic("mode-changed", `mode=${voiceMode}`);
 }
 
+function handleParserModeChange() {
+  parserMode = supportedParserMode(els.parserModeSelect.value);
+  localStorage.setItem(parserModeKey, parserMode);
+  logVoiceDiagnostic("parser-mode-changed", `parser=${parserMode}`);
+}
+
 function updateSpeechSupportLabel(SpeechRecognition) {
   els.speechSupport.textContent = SpeechRecognition ? speechLanguages[speechLanguage] : "用鍵盤麥克風";
 }
@@ -617,8 +628,16 @@ function loadVoiceMode() {
   return supportedVoiceMode(localStorage.getItem(voiceModeKey));
 }
 
+function loadParserMode() {
+  return supportedParserMode(localStorage.getItem(parserModeKey));
+}
+
 function supportedVoiceMode(value) {
   return value === "single" ? "single" : "continuous";
+}
+
+function supportedParserMode(value) {
+  return value === "local" ? "local" : "ai";
 }
 
 function supportedSpeechLanguage(value) {
@@ -645,6 +664,16 @@ async function handlePhrase(rawText) {
 
   const parseId = activeParseId + 1;
   activeParseId = parseId;
+
+  if (parserMode === "local") {
+    logVoiceDiagnostic(`LOCAL #${parseId} parse-start`);
+    const localItems = parsePhrase(text);
+    logVoiceDiagnostic(`LOCAL #${parseId} parse-result`, `records=${localItems.length}`);
+    openPending(localItems, { mode: "create", heard: text, source: "local" });
+    showToast("本機解析完成");
+    return;
+  }
+
   setPhraseParsingState(true);
   logVoiceDiagnostic(`AI #${parseId} parse-start`);
 

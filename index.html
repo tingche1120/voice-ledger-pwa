@@ -171,6 +171,14 @@
             </select>
             <p>單句模式可能在停頓時提前結束；可隨時切回目前模式。</p>
           </article>
+          <article class="settings-voice-mode">
+            <span>解析方式</span>
+            <select class="settings-select" id="parserModeSelect" aria-label="解析方式">
+              <option value="ai">AI 解析</option>
+              <option value="local">本機解析（測試）</option>
+            </select>
+            <p>本機解析不連線 AI，用來確認 AI 等待是否影響下一次語音辨識。</p>
+          </article>
           <article class="settings-diagnostics">
             <span>語音診斷（暫時）</span>
             <p>重現問題後，回到這裡複製紀錄給我。重新開啟 App 會清除；不記錄聲音或記帳內容。</p>
@@ -179,7 +187,7 @@
           </article>
         </div>
         <button class="help-button" type="button" id="helpButton">使用說明</button>
-        <p class="app-version">A1.3.4</p>
+        <p class="app-version">A1.3.5</p>
       </section>
 
       <nav class="bottom-nav" aria-label="主要導覽">
