@@ -36,8 +36,8 @@ const parserModeKey = "voice-ledger-parser-mode";
 const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
 const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
 const aiParseTimeoutMs = 8000;
-const diagnosticVersion = "A1.3.6";
-const diagnosticLimit = 80;
+const diagnosticVersion = "A1.3.7";
+const diagnosticLimit = 140;
 
 let categories = loadCategories();
 let categoryHints = loadCategoryHints();
@@ -204,6 +204,16 @@ function init() {
   els.micButton.addEventListener("pointercancel", stopHoldVoiceInput);
   els.micButton.addEventListener("pointerleave", stopHoldVoiceInput);
   els.micButton.addEventListener("click", handleMicClick);
+  const passiveCapture = { capture: true, passive: true };
+  document.addEventListener("pointerdown", logConfirmInteraction, passiveCapture);
+  document.addEventListener("pointerup", logConfirmInteraction, passiveCapture);
+  document.addEventListener("pointercancel", logConfirmInteraction, passiveCapture);
+  document.addEventListener("touchstart", logConfirmInteraction, passiveCapture);
+  document.addEventListener("touchend", logConfirmInteraction, passiveCapture);
+  document.addEventListener("click", logConfirmInteraction, true);
+  document.addEventListener("focusin", logConfirmFocusChange, true);
+  document.addEventListener("focusout", logConfirmFocusChange, true);
+  window.visualViewport?.addEventListener("resize", logConfirmViewportChange);
   els.cancelConfirm.addEventListener("click", closeConfirm);
   els.closeConfirm.addEventListener("click", closeConfirm);
   els.saveConfirm.addEventListener("pointerdown", logSaveButtonEvent);
@@ -595,9 +605,70 @@ function logSaveButtonEvent(event) {
     : active?.id || active?.tagName?.toLowerCase() || "none";
   const pointerType = event.pointerType || "none";
   logVoiceDiagnostic(
-    `[DEBUG-save-a136] save-${event.type}`,
+    `[DEBUG-save-a137] save-${event.type}`,
     `pointer=${pointerType} disabled=${els.saveConfirm.disabled} pending=${pendingItems.length} active=${activeName} prevented=${event.defaultPrevented}`,
   );
+}
+
+function logConfirmInteraction(event) {
+  if (els.confirmBackdrop.hidden) return;
+  const point = event.changedTouches?.[0] || event;
+  const x = Number.isFinite(point.clientX) ? Math.round(point.clientX) : -1;
+  const y = Number.isFinite(point.clientY) ? Math.round(point.clientY) : -1;
+  const hit = x >= 0 && y >= 0 ? document.elementFromPoint?.(x, y) : null;
+  logVoiceDiagnostic(
+    `[DEBUG-save-a137] capture-${event.type}`,
+    `target=${diagnosticElementName(event.target)} hit=${diagnosticElementName(hit)} x=${x} y=${y} active=${diagnosticElementName(document.activeElement)}`,
+  );
+}
+
+function logConfirmFocusChange(event) {
+  if (els.confirmBackdrop.hidden) return;
+  logVoiceDiagnostic(
+    `[DEBUG-save-a137] ${event.type}`,
+    `target=${diagnosticElementName(event.target)} related=${diagnosticElementName(event.relatedTarget)} viewport=${diagnosticViewport()}`,
+  );
+}
+
+function logConfirmViewportChange() {
+  if (els.confirmBackdrop.hidden) return;
+  logVoiceDiagnostic("[DEBUG-save-a137] viewport-resize", diagnosticViewport());
+}
+
+function diagnosticElementName(element) {
+  if (!element) return "none";
+  if (element.closest?.("#saveConfirm")) return "#saveConfirm";
+  if (element.closest?.("#toast")) return "#toast";
+  if (element.closest?.("#confirmBackdrop")) {
+    if (element.dataset?.field) return `${element.tagName?.toLowerCase() || "control"}[${element.dataset.field}]`;
+    if (element.id) return `#${element.id}`;
+    const className = typeof element.className === "string" ? element.className.trim().split(/\s+/).slice(0, 2).join(".") : "";
+    return className ? `${element.tagName?.toLowerCase() || "element"}.${className}` : element.tagName?.toLowerCase() || "confirm-child";
+  }
+  if (element.id) return `#${element.id}`;
+  return element.tagName?.toLowerCase() || "unknown";
+}
+
+function diagnosticViewport() {
+  const viewport = window.visualViewport;
+  if (!viewport) return `inner=${window.innerWidth || 0}x${window.innerHeight || 0}`;
+  return `visual=${Math.round(viewport.width)}x${Math.round(viewport.height)} offsetTop=${Math.round(viewport.offsetTop)} inner=${window.innerWidth || 0}x${window.innerHeight || 0}`;
+}
+
+function logConfirmGeometry() {
+  if (els.confirmBackdrop.hidden) return;
+  const saveRect = els.saveConfirm.getBoundingClientRect?.();
+  const toastRect = !els.toast.hidden ? els.toast.getBoundingClientRect?.() : null;
+  const overlaps = Boolean(saveRect && toastRect && saveRect.left < toastRect.right && saveRect.right > toastRect.left && saveRect.top < toastRect.bottom && saveRect.bottom > toastRect.top);
+  logVoiceDiagnostic(
+    "[DEBUG-save-a137] confirm-geometry",
+    `save=${diagnosticRect(saveRect)} toast=${diagnosticRect(toastRect)} overlap=${overlaps} viewport=${diagnosticViewport()}`,
+  );
+}
+
+function diagnosticRect(rect) {
+  if (!rect) return "none";
+  return `${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.right)},${Math.round(rect.bottom)}`;
 }
 
 async function copyVoiceDiagnostics() {
@@ -748,6 +819,8 @@ function openPending(items, { mode, heard, source = "local" }) {
   els.saveConfirm.textContent = mode === "edit" ? "儲存修改" : "全部儲存";
   renderPending();
   els.confirmBackdrop.hidden = false;
+  logVoiceDiagnostic("[DEBUG-save-a137] confirm-open", `pending=${pendingItems.length} active=${diagnosticElementName(document.activeElement)} viewport=${diagnosticViewport()}`);
+  window.requestAnimationFrame?.(logConfirmGeometry);
 }
 
 function confirmModeLabel(mode, source) {
@@ -1222,9 +1295,9 @@ function handlePendingClick(event) {
 }
 
 function savePending() {
-  logVoiceDiagnostic("[DEBUG-save-a136] save-start", `pending=${pendingItems.length}`);
+  logVoiceDiagnostic("[DEBUG-save-a137] save-start", `pending=${pendingItems.length}`);
   if (!pendingItems.length) {
-    logVoiceDiagnostic("[DEBUG-save-a136] save-skipped", "reason=no-pending-items");
+    logVoiceDiagnostic("[DEBUG-save-a137] save-skipped", "reason=no-pending-items");
     return;
   }
   const cleaned = pendingItems.map((item) => ({
@@ -1254,7 +1327,7 @@ function savePending() {
   render();
   closeConfirm();
   els.quickText.value = "";
-  logVoiceDiagnostic("[DEBUG-save-a136] save-complete", `saved=${cleaned.length}`);
+  logVoiceDiagnostic("[DEBUG-save-a137] save-complete", `saved=${cleaned.length}`);
 }
 
 function saveMissingCategoriesFromPending(items) {
@@ -1266,6 +1339,9 @@ function saveMissingCategoriesFromPending(items) {
 }
 
 function closeConfirm() {
+  if (!els.confirmBackdrop.hidden) {
+    logVoiceDiagnostic("[DEBUG-save-a137] confirm-close", `pending=${pendingItems.length} active=${diagnosticElementName(document.activeElement)}`);
+  }
   els.confirmBackdrop.hidden = true;
   pendingItems = [];
   pendingMode = "create";
