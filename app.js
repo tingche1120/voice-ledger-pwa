@@ -36,7 +36,8 @@ const parserModeKey = "voice-ledger-parser-mode";
 const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
 const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
 const aiParseTimeoutMs = 8000;
-const diagnosticVersion = "A1.3.7";
+const micSpeechTimeoutMs = 5000;
+const diagnosticVersion = "A1.3.8";
 const diagnosticLimit = 140;
 
 let categories = loadCategories();
@@ -67,7 +68,6 @@ let currentFilter = "all";
 let selectedDate = todayISO();
 let visibleMonth = selectedDate.slice(0, 7);
 let activeRecognition = null;
-let reusableRecognition = null;
 let activeVoiceSession = null;
 let recognitionSequence = 0;
 const diagnosticStart = Date.now();
@@ -494,30 +494,54 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
     return false;
   }
 
-  const reused = Boolean(reusableRecognition);
-  const recognition = reusableRecognition || new SpeechRecognition();
-  reusableRecognition = recognition;
+  const recognition = new SpeechRecognition();
   const recognitionId = ++recognitionSequence;
-  const session = { transcript: "", failed: false, stopRequested: false };
+  const session = { transcript: "", failed: false, stopRequested: false, speechStarted: false, watchdogId: null, released: false };
   const isCurrentSession = () => activeVoiceSession === session;
   recognition.lang = speechLanguage;
   recognition.continuous = holdMode && voiceMode === "continuous";
   recognition.interimResults = holdMode;
   activeRecognition = recognition;
   activeVoiceSession = session;
-  logVoiceDiagnostic(`#${recognitionId} session`, `reused=${reused} hold=${holdMode} language=${speechLanguage} mode=${voiceMode}`);
+  logVoiceDiagnostic(`#${recognitionId} session`, `reused=false hardReset=true hold=${holdMode} language=${speechLanguage} mode=${voiceMode}`);
 
   els.listenState.classList.add("listening");
   els.listenState.querySelector("p").textContent = holdMode ? "放開後解析" : "正在聽";
 
   recognition.onstart = () => logVoiceDiagnostic(`#${recognitionId} start`);
-  recognition.onaudiostart = () => logVoiceDiagnostic(`#${recognitionId} audio-start`);
-  recognition.onspeechstart = () => logVoiceDiagnostic(`#${recognitionId} speech-start`);
+  recognition.onaudiostart = () => {
+    logVoiceDiagnostic(`#${recognitionId} audio-start`);
+    clearVoiceWatchdog(session);
+    session.watchdogId = setTimeout(() => {
+      if (!isCurrentSession() || session.speechStarted || session.stopRequested || session.failed) return;
+      session.failed = true;
+      logVoiceDiagnostic(`#${recognitionId} mic-watchdog-timeout`, `after=${micSpeechTimeoutMs}ms`);
+      holdStarted = false;
+      ignoreNextClick = false;
+      resetListenState();
+      showToast("iPhone 沒有啟動麥克風，請稍後再試或使用鍵盤麥克風");
+      try {
+        recognition.abort();
+      } catch (error) {
+        logVoiceDiagnostic(`#${recognitionId} watchdog-abort-threw`, `name=${error?.name || "unknown"}`);
+      }
+    }, micSpeechTimeoutMs);
+  };
+  recognition.onspeechstart = () => {
+    session.speechStarted = true;
+    clearVoiceWatchdog(session);
+    logVoiceDiagnostic(`#${recognitionId} speech-start`);
+  };
   recognition.onspeechend = () => logVoiceDiagnostic(`#${recognitionId} speech-end`);
-  recognition.onaudioend = () => logVoiceDiagnostic(`#${recognitionId} audio-end`);
+  recognition.onaudioend = () => {
+    clearVoiceWatchdog(session);
+    logVoiceDiagnostic(`#${recognitionId} audio-end`);
+  };
 
   recognition.onresult = (event) => {
     if (!isCurrentSession() || session.failed) return;
+    session.speechStarted = true;
+    clearVoiceWatchdog(session);
     let finalText = "";
     let previewText = "";
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -532,6 +556,7 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
   };
 
   recognition.onerror = (event) => {
+    clearVoiceWatchdog(session);
     logVoiceDiagnostic(`#${recognitionId} error`, `code=${event?.error || "unknown"} current=${isCurrentSession()}`);
     if (!isCurrentSession()) return;
     // The native session is still busy until onend, even after onerror.
@@ -544,12 +569,17 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
   };
 
   recognition.onend = () => {
+    clearVoiceWatchdog(session);
     logVoiceDiagnostic(`#${recognitionId} end`, `current=${isCurrentSession()} hasResult=${Boolean(session.transcript.trim())} failed=${session.failed}`);
-    if (!isCurrentSession()) return;
+    if (!isCurrentSession()) {
+      hardReleaseRecognition(recognition, session, recognitionId);
+      return;
+    }
     const text = session.failed ? "" : session.transcript.trim();
     activeRecognition = null;
     activeVoiceSession = null;
     holdStarted = false;
+    hardReleaseRecognition(recognition, session, recognitionId);
     resetListenState();
     if (text && !isParsingPhrase) handlePhrase(text);
   };
@@ -562,6 +592,7 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
     activeRecognition = null;
     activeVoiceSession = null;
     holdStarted = false;
+    hardReleaseRecognition(recognition, session, recognitionId);
     resetListenState();
     showToast("語音沒有成功，請到設定複製語音診斷紀錄");
     return false;
@@ -572,9 +603,36 @@ function startVoiceInput({ holdMode } = { holdMode: false }) {
 function stopVoiceInput() {
   if (!activeRecognition || !activeVoiceSession || activeVoiceSession.stopRequested || activeVoiceSession.failed) return;
   activeVoiceSession.stopRequested = true;
+  clearVoiceWatchdog(activeVoiceSession);
   logVoiceDiagnostic("recognition-stop-called");
   els.listenState.querySelector("p").textContent = "解析中";
   activeRecognition.stop();
+}
+
+function clearVoiceWatchdog(session) {
+  if (!session?.watchdogId) return;
+  clearTimeout(session.watchdogId);
+  session.watchdogId = null;
+}
+
+function hardReleaseRecognition(recognition, session, recognitionId) {
+  if (!recognition || session?.released) return;
+  if (session) session.released = true;
+  clearVoiceWatchdog(session);
+  recognition.onstart = null;
+  recognition.onaudiostart = null;
+  recognition.onspeechstart = null;
+  recognition.onspeechend = null;
+  recognition.onaudioend = null;
+  recognition.onresult = null;
+  recognition.onerror = null;
+  recognition.onend = null;
+  try {
+    recognition.abort?.();
+    logVoiceDiagnostic(`#${recognitionId} hard-release`, "abort=called callbacks=cleared");
+  } catch (error) {
+    logVoiceDiagnostic(`#${recognitionId} hard-release`, `abort=threw name=${error?.name || "unknown"} callbacks=cleared`);
+  }
 }
 
 function resetListenState() {

@@ -4,7 +4,7 @@
 
 ## 目前進度
 
-目前版本：`A1.3.7`
+目前版本：`A1.3.8`
 
 已完成 A1.0 原型，A1.3 加入 AI 解析與中文 / English 語音語言切換：
 
@@ -98,13 +98,15 @@ http://<你的電腦區網 IP>:4173/
 
 A1.3.7 暫時在同一份診斷紀錄追蹤確認視窗內的觸控目標、點擊座標、焦點、可視畫面高度，以及提示訊息是否覆蓋儲存按鈕。事件以 `[DEBUG-save-a137]` 開頭，只記錄介面狀態與待儲存筆數，不記錄帳目內容。用來找出手機上需要按兩次時，第一下實際被哪個介面攔走。
 
+A1.3.8 針對 iPhone 第一次有橘色麥克風指示、後續只有網頁 `audio-start` 卻沒有橘點的現象，改為每輪建立全新的辨識器，結束後清除所有回呼、呼叫 `abort()` 並丟棄舊物件。若 `audio-start` 後 5 秒仍沒有語音事件，會以 `mic-watchdog-timeout` 記錄並中止該次辨識。這是改用錄音上傳前的最後一個 Web Speech 釋放實驗，是否有效仍以 iPhone 橘點與連續實測為準。
+
 語音辨識模式可在設定中切換：「目前模式」維持原有持續辨識；「單句模式（實驗）」用來比較 iPhone 上連續錄音的穩定性，可能在說話停頓時提前結束。選擇會保留在這台裝置，可隨時切回目前模式；診斷紀錄會標明每次使用的模式。
 
 解析方式可切換「AI 解析」與「本機解析（測試）」。本機模式完全略過 AI 網路請求並立即使用既有規則解析，兩種方式共用相同的語音辨識程式，用來 A/B 比較 AI 等待是否會影響下一次錄音。選擇會保留在這台裝置，診斷紀錄的 `parser=ai` / `parser=local` 及 `AI` / `LOCAL` 事件可確認實際走的路徑。
 
-A1.3.4 針對手機第一筆成功、後續只有 audio-start 而沒有辨識結果的情況，測試在同一次開啟 App 期間重複使用同一個辨識器。收到 error 後會等 end 才允許重新啟動，各輪文字與回呼狀態分開保存，重複的停止要求只會送出一次。診斷中的 `session reused=true` 表示再次使用同一辨識器。此調整仍需 iPhone 實測確認，不能把模擬測試通過當成手機問題已排除。
+A1.3.4 曾測試在同一次開啟 App 期間重複使用同一個辨識器；A1.3.8 已依 iPhone 橘點證據改為相反策略，每輪完整釋放並重建。收到 error 後仍會等 end 才允許重新啟動，各輪文字與回呼狀態分開保存，重複的停止要求只會送出一次。此調整仍需 iPhone 實測確認，不能把模擬測試通過當成手機問題已排除。
 
-檢查指令：`node tests/parser-mode.test.cjs`、`node tests/parser-regression.test.cjs`、`node tests/voice-lifecycle.test.cjs` 與 `node tests/voice-mode.test.cjs`。測試使用實際 app.js 流程與模擬語音／HTTP 事件，涵蓋 AI／本機解析隔離、既有解析基線、兩種語音模式、儲存及取消後連續三筆、錯誤與結束事件間隔、重複停止及舊回呼隔離；不會測到 iPhone 原生辨識服務。
+檢查指令：`node tests/parser-mode.test.cjs`、`node tests/parser-regression.test.cjs`、`node tests/voice-lifecycle.test.cjs`、`node tests/voice-mode.test.cjs` 與 `node tests/save-touch-diagnostics.test.cjs`。測試使用實際 app.js 流程與模擬語音／HTTP 事件，涵蓋 AI／本機解析隔離、既有解析基線、兩種語音模式、儲存及取消後連續三筆、每輪辨識器釋放、麥克風逾時保護、錯誤與結束事件間隔、重複停止、舊回呼隔離及儲存觸控診斷；不會測到 iPhone 原生辨識服務。
 
 ### 分類與關鍵字
 
