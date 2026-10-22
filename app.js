@@ -36,7 +36,7 @@ const parserModeKey = "voice-ledger-parser-mode";
 const speechLanguages = { "zh-TW": "中文", "en-US": "English" };
 const aiParseEndpoint = "https://voice-ledger-ai-api.tingche.workers.dev/parse-ledger";
 const aiParseTimeoutMs = 8000;
-const diagnosticVersion = "A1.3.5";
+const diagnosticVersion = "A1.3.6";
 const diagnosticLimit = 80;
 
 let categories = loadCategories();
@@ -206,7 +206,13 @@ function init() {
   els.micButton.addEventListener("click", handleMicClick);
   els.cancelConfirm.addEventListener("click", closeConfirm);
   els.closeConfirm.addEventListener("click", closeConfirm);
-  els.saveConfirm.addEventListener("click", savePending);
+  els.saveConfirm.addEventListener("pointerdown", logSaveButtonEvent);
+  els.saveConfirm.addEventListener("pointerup", logSaveButtonEvent);
+  els.saveConfirm.addEventListener("pointercancel", logSaveButtonEvent);
+  els.saveConfirm.addEventListener("click", (event) => {
+    logSaveButtonEvent(event);
+    savePending();
+  });
   els.pendingList.addEventListener("input", updatePendingFromControl);
   els.pendingList.addEventListener("change", updatePendingFromControl);
   els.pendingList.addEventListener("click", handlePendingClick);
@@ -580,6 +586,18 @@ function logVoiceDiagnostic(event, details = "") {
     els.voiceDiagnosticLog.value = `Voice Ledger ${diagnosticVersion}\n只記錄事件，不包含語音或記帳內容。重新開啟 App 後清除。\n\n${diagnosticLines.join("\n")}`;
     els.voiceDiagnosticLog.scrollTop = els.voiceDiagnosticLog.scrollHeight;
   }
+}
+
+function logSaveButtonEvent(event) {
+  const active = document.activeElement;
+  const activeName = active?.dataset?.field
+    ? `${active.tagName.toLowerCase()}[${active.dataset.field}]`
+    : active?.id || active?.tagName?.toLowerCase() || "none";
+  const pointerType = event.pointerType || "none";
+  logVoiceDiagnostic(
+    `[DEBUG-save-a136] save-${event.type}`,
+    `pointer=${pointerType} disabled=${els.saveConfirm.disabled} pending=${pendingItems.length} active=${activeName} prevented=${event.defaultPrevented}`,
+  );
 }
 
 async function copyVoiceDiagnostics() {
@@ -1204,7 +1222,11 @@ function handlePendingClick(event) {
 }
 
 function savePending() {
-  if (!pendingItems.length) return;
+  logVoiceDiagnostic("[DEBUG-save-a136] save-start", `pending=${pendingItems.length}`);
+  if (!pendingItems.length) {
+    logVoiceDiagnostic("[DEBUG-save-a136] save-skipped", "reason=no-pending-items");
+    return;
+  }
   const cleaned = pendingItems.map((item) => ({
     ...item,
     note: item.note.trim() || item.category,
@@ -1232,6 +1254,7 @@ function savePending() {
   render();
   closeConfirm();
   els.quickText.value = "";
+  logVoiceDiagnostic("[DEBUG-save-a136] save-complete", `saved=${cleaned.length}`);
 }
 
 function saveMissingCategoriesFromPending(items) {
